@@ -4,6 +4,9 @@
 
 import cv2
 import numpy as np
+import time
+
+car_location = [-79.92589, 43.25756, 0]  # default value
 
 
 def convert_world_to_cam(point_array):
@@ -30,8 +33,6 @@ def return_route_array():
                    [43.25884, -79.90441, 0], [43.25901, -79.90327, 0], [43.25913, -79.90239, 0],
                    [43.2593, -79.90237, 0], [43.25965, -79.90225, 0], [43.26039, -79.90189, 0],
                    [43.26301, -79.90074, 0], [43.26309, -79.90106, 0]]
-
-    car_location = [-79.92589, 43.25756, 0]
     #  Tyler's Branch 2
 
     offset = [0, 0, 0]
@@ -86,7 +87,50 @@ cv2.createTrackbar('tx', 'image', 0, 10000, nothing)
 cv2.createTrackbar('ty', 'image', 75, 10000, nothing)
 cv2.createTrackbar('tz', 'image', 175, 10000, nothing)
 
+# GPS Playback---------------------------------------
+car_location = [-79.92589, 43.25756, 0]  # default value
+print("-----\nBeginning Playback...\n-----")
+f = open('serial_output.txt', 'r')
+start_time = time.time() - 0.1
+prev_time = 0
+
+current_location = [0, 0]
+current_direction = 0
+# GPS Playback---------------------------------------
+
+
 while True:
+    try:
+            current_time = round(time.time() - start_time, 1)
+
+            if current_time != prev_time:  # ------------------------------------------------(10Hz) Update serial data
+                data = f.readline().split(",")
+                current_location = [float(data[1]), float(data[2])]
+                current_direction = float(data[3])
+                car_location = current_location.append(0)
+                route_overview = return_route_array()
+                print("system_time: " + str(current_time))
+                # print("data_time: " + data[0])
+                if current_time - float(data[0]) > 0:  # data_time is lagging, therefore advance read line f'n
+                    while current_time - float(data[0]) > 0:
+                        # print("Advancing line until current time is found...")
+                        data = f.readline().split(",")
+                        print("new_data_time: " + data[0])
+                #
+                print("current_location: " + str(current_location))
+                print("current_direction: " + str(current_direction))
+                print("CAR LOCATION:" + str(car_location))
+                print("-----")
+                # time.sleep(0.5)  # testing lagging resiliency
+            prev_time = current_time * 1
+    except KeyboardInterrupt:
+        f.close()
+        print("-----\nProgram Terminated by User...\n-----")
+    except IndexError:
+        f.close()
+        print("-----\nReached end of Recording...\n-----")
+
+
     x_rotation_matrix = np.matrix(
         [[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
     y_rotation_matrix = np.matrix(
