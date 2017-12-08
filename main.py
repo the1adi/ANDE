@@ -116,7 +116,7 @@ while True:
 
     translation_vector = np.array([[cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
 
-    if cv2.waitKey(5) & 0xFF == ord('q'):
+    if cv2.waitKey(60) & 0xFF == ord('q'):
         break
 
 cv2.destroyAllWindows()
