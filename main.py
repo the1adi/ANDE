@@ -1,6 +1,7 @@
 # Pycharm issue with imports. https://stackoverflow.com/questions/23248017/cannot-find-reference-xxx-in-init-py-python-pycharm
 # from . import cv2
 # __all__ = [cv2]
+
 import cv2
 import numpy as np
 
@@ -30,7 +31,7 @@ def return_route_array():
                    [43.2593, -79.90237, 0], [43.25965, -79.90225, 0], [43.26039, -79.90189, 0],
                    [43.26301, -79.90074, 0], [43.26309, -79.90106, 0]]
 
-    car_location = [-79.92589, 43.25756, 0]
+    car_location = [-79.92581, 43.25696, 0]
 
     offset = [0, 0, 0]
     data = []
@@ -60,8 +61,8 @@ def nothing(x):
 route_overview = return_route_array()
 
 
-img = cv2.imread('5s.jpg', 1) #single image
-img2 = cv2.imread('5s.jpg', 1) #single image
+img = cv2.imread('5s.jpg', 1)  # single image
+img2 = cv2.imread('5s.jpg', 1)  # single image
 
 # intrinsic parameters (iPhone 5s)
 fx = 2797.43
