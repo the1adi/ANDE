@@ -60,7 +60,6 @@ def nothing(x):
 
 route_overview = return_route_array()
 
-
 img = cv2.imread('5s.jpg', 1)  # single image
 img2 = cv2.imread('5s.jpg', 1)  # single image
 
