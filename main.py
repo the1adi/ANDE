@@ -82,8 +82,8 @@ translation_vector = np.array([[0], [0], [1500]], np.int32)
 
 cv2.namedWindow('image', cv2.WINDOW_NORMAL)
 cv2.namedWindow('image2', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('image', 1000,500)
-cv2.resizeWindow('image2', 1000, 500)
+cv2.resizeWindow('image', 500,100)
+cv2.resizeWindow('image2', 1366, 768)
 
 cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
 cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
