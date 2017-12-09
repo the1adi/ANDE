@@ -7,7 +7,7 @@ import numpy as np
 import time
 
 
-car_location = [-79.92589, 43.25756, 0]  # default value
+car_location = [-79.92589, 43.25756, 0]  #default value
 
 def convert_world_to_cam(point_array):
     # print("Converting " + str(point_array) + " to camera coords...")
