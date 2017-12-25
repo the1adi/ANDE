@@ -31,6 +31,7 @@ def draw_road(route_array, width):
     # calculate incident angle of each segment
     for i in range(0, len(route_array)-1):
         vector = route_array[i+1] - route_array[i]
+        print(vector*10000)
 
         # Arctan is not very good at getting the desired angle. These if-statements make any corrections.
         if vector[1] != 0:  # Handles division by zero
@@ -43,7 +44,11 @@ def draw_road(route_array, width):
                     else:
                         angle = 3*np.pi/2
                 else:
-                    angle = np.arctan(vector[1] / vector[0])
+                    if (vector[0] < 0 and vector[1] > 0):  # top left quadrant
+                        angle = np.arctan(vector[1] / vector[0])+np.pi
+                    else:
+                        angle = np.arctan(vector[1] / vector[0])
+                    print("angle: " + str(np.rad2deg(angle)))
         elif vector[0] > 0:
             angle = 0
         else:
@@ -86,13 +91,23 @@ def draw_road(route_array, width):
         else:
             if clockwise:
                 angle = incident_array[i] - angle_at_vertex[i - 1]/2
+                print("CW")
+                print("Incident i - 1: "+str(np.rad2deg(incident_array[i-1])))
+                print("Incident i: " + str(np.rad2deg(incident_array[i])))
+                print("Angle: " + str(np.rad2deg(angle)))
             else:
                 angle = incident_array[i] - np.pi + angle_at_vertex[i - 1]/2
+                print("CCW")
+                print("Incident i - 1: " + str(np.rad2deg(incident_array[i-1])))
+                print("Incident i: " + str(np.rad2deg(incident_array[i])))
+                print("Angle: " + str(np.rad2deg(angle)))
 
         if angle < 0:
             angle = 2*np.pi + angle  # make all angles positive. this simplifies the rest of the algorithm.
+            print("Angle (fix neg): " + str(np.rad2deg(angle)))
 
         angle_array.append(angle)
+        print("--")
 
     # end point
     angle_array.append(incident_array[-1] - np.pi / 2)
@@ -108,25 +123,45 @@ def draw_road(route_array, width):
 
             magnitude = width / np.cos(np.abs(angle - angle_array[i]))
 
-            print("Perpendicular Incident: " + str(np.rad2deg(angle)))
-            print("Angle Array: " + str(np.rad2deg(angle_array[i])))
-            print(" ")
-
+            # print("Perpendicular Incident: " + str(np.rad2deg(angle)))
+            # print("Angle Array: " + str(np.rad2deg(angle_array[i])))
+            # print(" ")
         magnitude_array.append(magnitude)
 
     # end point
     magnitude_array.append(width)
 
-    print("---------------ROAD ARRAY")
     # generate output road array
     for i in range(0, len(route_array)):
-        coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
+        print("--")
+        print("ANGLE: " + str(np.rad2deg(angle_array[i])))
+        print("X: "+str(np.cos(angle_array[i])))
+        print("Y: "+str(np.sin(angle_array[i])))
+        if i == 0:
+            print(">>> i=0; Angle:" + str(np.rad2deg(angle_array[i])))
+            print(route_array[i])
+            coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
+        elif i == 1:
+            print(">>> i=1; Angle:" + str(np.rad2deg(angle_array[i])))
+            print(route_array[i])
+            coordinate = route_array[i] + [magnitude_array[i] * np.cos(angle_array[i]), magnitude_array[i] * np.sin(angle_array[i]), 0]
+        else:
+            coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
+        print("--")
         road_array.append(coordinate)
+
+    print("---------------ANGLE ARRAY")
+    for i in angle_array:
+        print(round(np.rad2deg(i), 1))
+    print("---------------")
+
+    print("---------------INCIDENT ARRAY")
+    for i in incident_array:
+        print(round(np.rad2deg(i), 1))
     print("---------------")
 
     for i in range(len(route_array)-1, -1, -1):
         road_array.append(route_array[i])
-        print(i)
 
     return road_array
 
@@ -199,9 +234,7 @@ origin = [43.256963, -79.925822]  # replace this with car's gps coordinate
 destination = [43.263071, -79.901068]
 # global_route = fetch_route_google_api(origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
 global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0], [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0], [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0], [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0], [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0], [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0], [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0], [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0], [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
-
-# global_route = [[-79.92589, 43.25696, 0], [-79.92589+0.001, 43.25696+0.001, 0], [-79.92589+0.001*2, 43.25696+0.001, 0], [-79.92589+0.0005, 43.25696-0.0005, 0], [-79.92589-0.00002, 43.25696-0.0005, 0]]
-global_route = draw_road(np.array(global_route), 0.0001)
+global_route = draw_road(np.array(global_route), 0.00015)
 relative_route = get_relative_route(global_route)
 
 
@@ -215,20 +248,20 @@ cv2.namedWindow('image', cv2.WINDOW_NORMAL)
 cv2.resizeWindow('image', 1100, 768)
 
 # OLD DEFAULTS
-# cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
-# cv2.createTrackbar('ry', 'image', 4592, 6280*2, nothing)
-# cv2.createTrackbar('rz', 'image', 6280, 6280*2, nothing)
-# cv2.createTrackbar('tx', 'image', 275, 10000, nothing)
-# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
-# cv2.createTrackbar('tz', 'image', 55, 10000, nothing)
+cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
+cv2.createTrackbar('ry', 'image', 4592, 6280*2, nothing)
+cv2.createTrackbar('rz', 'image', 6280, 6280*2, nothing)
+cv2.createTrackbar('tx', 'image', 77, 10000, nothing)
+cv2.createTrackbar('ty', 'image', 44, 10000, nothing)
+cv2.createTrackbar('tz', 'image', 66, 10000, nothing)
 
 # NEW DEFAULTS
-cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
-cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
-cv2.createTrackbar('rz', 'image', 0, 6280*2, nothing)
-cv2.createTrackbar('tx', 'image', 1443, 10000, nothing)
-cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
-cv2.createTrackbar('tz', 'image', 3029, 10000, nothing)
+# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
+# cv2.createTrackbar('tx', 'image', 0, 30000, nothing)
+# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
+# cv2.createTrackbar('tz', 'image', 3029, 30000, nothing)
 
 
 f = open('serial_output.txt', 'r')
@@ -266,7 +299,7 @@ while True:
         # print("-----\nReached end of Recording...\n-----")
 
     # hard-coding car's location
-    car_location = [-79.92581, 43.25696, 0]
+    # car_location = [-79.92581, 43.25696, 0]
 
     x_rotation_matrix = np.matrix(
         [[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
@@ -295,8 +328,8 @@ while True:
     # y_theta = y_theta + np.pi*0.01
     z_theta = cv2.getTrackbarPos('rz', 'image')/1000.0-3.14
 
-    # delete the '-300' offset on line below when you get the chance...
-    translation_vector = np.array([[cv2.getTrackbarPos('tx', 'image')-300], [cv2.getTrackbarPos('ty', 'image')+11], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
+    # delete the '-300' offset on line below when you get the chance... also get rid of that negative tx.
+    translation_vector = np.array([[-cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')+11], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
 
     if cv2.waitKey(60) & 0xFF == ord('q'):
         break
