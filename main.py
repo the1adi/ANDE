@@ -5,20 +5,94 @@ import requests
 import polyline
 import json
 
-
 api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
 
 # intrinsic parameters (iPhone 5s)
 intrinsic_parameters = [2797.43, 2797.43, 1631.5, 1223.5]  # fx, fy, cx, cy
 
 # extrinsic parameters
-x_theta = 1.57
-y_theta = 0
-z_theta = 0.771
 translation_vector = np.array([[0], [0], [1500]], np.int32)
 
 location = [0, 0]  # Car location
 direction = 0  # Car direction
+
+
+def point_is_viewable(line_pt_1, line_pt_2, point):
+    # Determinant of form: (Bx - Ax) * (Y - Ay) - (By - Ay) * (X - Ax)
+    # The 'line' is defined by two points. This is the clipping line.
+    # This line is perpendicular to the direction the camera is facing.
+    # The sign of the determinant essentially tells you which side of the line the 'point' is on
+    # Using this property, we can determine if a point lies in front or behind the camera
+    det = (line_pt_2[0]-line_pt_1[0])*(point[1]-line_pt_1[1])-(line_pt_2[1]-line_pt_1[1])*(point[0]-line_pt_1[0])
+    if det < 1:
+        return False
+    else:
+        return True
+
+
+def get_intersection(line, P3, P4):
+    # 'line' is an infinitely long clipping line. It is inputted into the function as an array of the Standard Form Coefficients [A, B, C]
+    # P3 and P4 define a line segment
+
+    # creating lines in Standard Form
+    A2 = P4[1] - P3[1]
+    B2 = P3[0] - P4[0]
+    C2 = A2 * P3[0] + B2 * P3[1]
+
+    # if det == 0, lines are parallel
+    # det = A1 * B2 - A2 * B1
+    det = line[0] * B2 - A2 * line[1]
+
+    if det != 0:
+        x = (B2 * line[2] - line[1] * C2) / det
+        y = (line[0] * C2 - A2 * line[2]) / det
+    else:
+        x = 0
+        y = 0
+
+    return [x, y, 0]
+
+
+def clip_array(route_array, clip_point, clip_rotation):
+    # the clipping line is a line defined
+    # right clip is a boolean indicating that this function will return the right bound clip. Pair this function with one that clips the left bound.
+    route_array = route_array.tolist()
+
+    clip_rotation -= np.pi/2
+
+    # First clip line
+    P1 = clip_point
+    P2 = clip_point + np.array([np.cos(clip_rotation), np.sin(clip_rotation), 0])
+
+    A1 = P2[1] - P1[1]
+    B1 = P1[0] - P2[0]
+    C1 = A1 * P1[0] + B1 * P1[1]
+
+    clipped_array = []
+
+    try:
+        prev_point_viewable = point_is_viewable(P1, P2, route_array[0])
+
+        if prev_point_viewable:
+            clipped_array.append(route_array[0])
+
+        for i in range(1, len(route_array)):
+            viewable = point_is_viewable(P1, P2, route_array[i])
+
+            if viewable != prev_point_viewable:  # add intersection point to the array
+                intersection = get_intersection([A1, B1, C1], route_array[i], route_array[i - 1])
+                clipped_array.append(intersection)
+
+            if viewable:  # only append viewable points to the main output array
+                clipped_array.append(route_array[i])
+
+            prev_point_viewable = viewable
+
+    except IndexError:
+        print("Error")
+        return np.array(get_relative_route(global_route))  # if something goes wrong, just return the array which was originally provided
+
+    return np.array(clipped_array)
 
 
 def draw_road(route_array, width):
@@ -31,7 +105,6 @@ def draw_road(route_array, width):
     # calculate incident angle of each segment
     for i in range(0, len(route_array)-1):
         vector = route_array[i+1] - route_array[i]
-        print(vector*10000)
 
         # Arctan is not very good at getting the desired angle. These if-statements make any corrections.
         if vector[1] != 0:  # Handles division by zero
@@ -44,11 +117,10 @@ def draw_road(route_array, width):
                     else:
                         angle = 3*np.pi/2
                 else:
-                    if (vector[0] < 0 and vector[1] > 0):  # top left quadrant
+                    if vector[0] < 0 and vector[1] > 0:  # top left quadrant
                         angle = np.arctan(vector[1] / vector[0])+np.pi
                     else:
                         angle = np.arctan(vector[1] / vector[0])
-                    print("angle: " + str(np.rad2deg(angle)))
         elif vector[0] > 0:
             angle = 0
         else:
@@ -91,23 +163,13 @@ def draw_road(route_array, width):
         else:
             if clockwise:
                 angle = incident_array[i] - angle_at_vertex[i - 1]/2
-                print("CW")
-                print("Incident i - 1: "+str(np.rad2deg(incident_array[i-1])))
-                print("Incident i: " + str(np.rad2deg(incident_array[i])))
-                print("Angle: " + str(np.rad2deg(angle)))
             else:
                 angle = incident_array[i] - np.pi + angle_at_vertex[i - 1]/2
-                print("CCW")
-                print("Incident i - 1: " + str(np.rad2deg(incident_array[i-1])))
-                print("Incident i: " + str(np.rad2deg(incident_array[i])))
-                print("Angle: " + str(np.rad2deg(angle)))
 
         if angle < 0:
             angle = 2*np.pi + angle  # make all angles positive. this simplifies the rest of the algorithm.
-            print("Angle (fix neg): " + str(np.rad2deg(angle)))
 
         angle_array.append(angle)
-        print("--")
 
     # end point
     angle_array.append(incident_array[-1] - np.pi / 2)
@@ -123,9 +185,6 @@ def draw_road(route_array, width):
 
             magnitude = width / np.cos(np.abs(angle - angle_array[i]))
 
-            # print("Perpendicular Incident: " + str(np.rad2deg(angle)))
-            # print("Angle Array: " + str(np.rad2deg(angle_array[i])))
-            # print(" ")
         magnitude_array.append(magnitude)
 
     # end point
@@ -133,32 +192,8 @@ def draw_road(route_array, width):
 
     # generate output road array
     for i in range(0, len(route_array)):
-        print("--")
-        print("ANGLE: " + str(np.rad2deg(angle_array[i])))
-        print("X: "+str(np.cos(angle_array[i])))
-        print("Y: "+str(np.sin(angle_array[i])))
-        if i == 0:
-            print(">>> i=0; Angle:" + str(np.rad2deg(angle_array[i])))
-            print(route_array[i])
-            coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
-        elif i == 1:
-            print(">>> i=1; Angle:" + str(np.rad2deg(angle_array[i])))
-            print(route_array[i])
-            coordinate = route_array[i] + [magnitude_array[i] * np.cos(angle_array[i]), magnitude_array[i] * np.sin(angle_array[i]), 0]
-        else:
-            coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
-        print("--")
+        coordinate = route_array[i] + [magnitude_array[i]*np.cos(angle_array[i]), magnitude_array[i]*np.sin(angle_array[i]), 0]
         road_array.append(coordinate)
-
-    print("---------------ANGLE ARRAY")
-    for i in angle_array:
-        print(round(np.rad2deg(i), 1))
-    print("---------------")
-
-    print("---------------INCIDENT ARRAY")
-    for i in incident_array:
-        print(round(np.rad2deg(i), 1))
-    print("---------------")
 
     for i in range(len(route_array)-1, -1, -1):
         road_array.append(route_array[i])
@@ -208,20 +243,15 @@ def get_relative_route(array):  # returns the route relative to car's current lo
 
     point = np.array(car_location, dtype=np.float32)
     relative_route_gps = (array - point)*scale  # subtract point from every element of array and adjust scale
-    # relative_route_gps = relative_route_gps.tolist()  # return relative route as list. I think its preferable to return a numpy array instead. So change this
     return relative_route_gps
 
 
 def convert_world_to_cam(point_array):
-    # print("Converting " + str(point_array) + " to camera coordinates...")
     world_coords = np.array([[point_array[0]], [point_array[1]], [point_array[2]]])
     transformed = rotation_matrix * world_coords + translation_vector
     transformed = transformed.tolist()
     u = intrinsic_parameters[0] * (transformed[0][0] / transformed[2][0]) + intrinsic_parameters[2]
     v = intrinsic_parameters[1] * (transformed[1][0] / transformed[2][0]) + intrinsic_parameters[3]
-    # print("u: " + str(u))
-    # print("v: " + str(v))
-    # print("---")
     return [u, v]
 
 
@@ -229,77 +259,103 @@ def nothing(x):
     pass
 
 
-car_location = [0, 0, 0]  # default value
-origin = [43.256963, -79.925822]  # replace this with car's gps coordinate
-destination = [43.263071, -79.901068]
-# global_route = fetch_route_google_api(origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
-global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0], [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0], [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0], [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0], [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0], [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0], [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0], [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0], [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
-global_route = draw_road(np.array(global_route), 0.00015)
-relative_route = get_relative_route(global_route)
-
-
-# draw_road(relative_route)
-print("-----")
-# draw_road(np.array([[0, 0, 0], [1, 1, 0], [2, 1, 0], [3, 2, 0], [2, 3, 0], [1, 3, 0], [1, 4, 0], [0, 3, 0], [1, 2, 0]]), 0.1)
-
-print("-----")
-
-cv2.namedWindow('image', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('image', 1100, 768)
-
-# OLD DEFAULTS
-cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
-cv2.createTrackbar('ry', 'image', 4592, 6280*2, nothing)
-cv2.createTrackbar('rz', 'image', 6280, 6280*2, nothing)
-cv2.createTrackbar('tx', 'image', 77, 10000, nothing)
-cv2.createTrackbar('ty', 'image', 44, 10000, nothing)
-cv2.createTrackbar('tz', 'image', 66, 10000, nothing)
-
-# NEW DEFAULTS
-# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
-# cv2.createTrackbar('tx', 'image', 0, 30000, nothing)
-# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
-# cv2.createTrackbar('tz', 'image', 3029, 30000, nothing)
-
-
 f = open('serial_output.txt', 'r')
 start_time = time.time() - 0.1
 prev_time = 0
 
-# y_theta = np.pi*1.3
+car_location = [0, 0, 0]  # default value
+origin = [43.256963, -79.925822]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
+destination = [43.263071, -79.901068]
+# global_route = fetch_route_google_api(origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
+global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0], [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0], [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0], [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0], [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0], [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0], [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0], [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0], [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
+# global_route = draw_road(np.array(global_route), 0.00007)
+global_route = draw_road(np.array(global_route), 0.00015)
+
+relative_route = get_relative_route(global_route)
+
+cv2.namedWindow('image', cv2.WINDOW_NORMAL)
+cv2.resizeWindow('image', 1100, 768)
+
+# CAR PERSPECTIVE
+cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
+cv2.createTrackbar('ry', 'image', 4703, 6280*2, nothing)
+cv2.createTrackbar('rz', 'image', 6280, 6280*2, nothing)
+cv2.createTrackbar('tx', 'image', 0, 10000, nothing)
+cv2.createTrackbar('ty', 'image', 55, 10000, nothing)
+cv2.createTrackbar('tz', 'image', 143, 10000, nothing)
+
+# ZOOMED OUT AERIAL
+# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
+# cv2.createTrackbar('tx', 'image', 12522, 30000, nothing)
+# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
+# cv2.createTrackbar('tz', 'image', 24747, 30000, nothing)
+
+# ZOOMED IN AERIAL
+# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
+# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
+# cv2.createTrackbar('tx', 'image', 1454, 30000, nothing)
+# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
+# cv2.createTrackbar('tz', 'image', 2941, 30000, nothing)
+
+# CAR LOCATION SLIDERS
+cv2.createTrackbar('car_x', 'image', 0, 2000, nothing)
+cv2.createTrackbar('car_y', 'image', 0, 2000, nothing)
+
+# CLIPPING SLIDERS (For debugging)
+cv2.createTrackbar('car_angle', 'image', 0, 6283, nothing)  # used just for debugging. Delete this after
+cv2.createTrackbar('pt_x', 'image', 2000, 4000, nothing)
+cv2.createTrackbar('pt_y', 'image', 2000, 4000, nothing)
+
+# used for measuring efficiency
+iteration = 0
+total_runtime = 0
 
 while True:
-    try:
-        current_time = round(time.time() - start_time, 1)
-        if current_time != prev_time:  # ------------------------------------------------(10Hz) Update serial data
-            data = f.readline().split(",")
-            location = [float(data[1]), float(data[2]), 0]
-            car_location = location
-            # print("system_time: " + str(current_time))
-            relative_route = get_relative_route(global_route)
-            if current_time - float(data[0]) > 0:  # data_time is lagging, therefore advance read line f'n
-                while current_time - float(data[0]) > 0:
-                    # print("Advancing line until current time is found...")
-                    data = f.readline().split(",")
-                    # print("new_data_time: " + data[0])
+    dx = cv2.getTrackbarPos('car_x', 'image')/100000  # used for testing
+    dy = cv2.getTrackbarPos('car_y', 'image')/100000  # used for testing
+    # used for runtime efficiency
+    iteration += 1
+    t1 = time.clock()
 
-            direction = float(data[3])
-            # print("location: " + str(location))
-            # print("direction: " + str(direction))
-            car_location = location
-            # print("-----")
-        prev_time = current_time * 1
-    except KeyboardInterrupt:
-        f.close()
-        # print("-----\nProgram Terminated by User...\n-----")
-    except (ValueError, IndexError):
-        f.close()
-        # print("-----\nReached end of Recording...\n-----")
+    # fetch recorded data from txt file --------------------------------------------------------
+    # try:
+    #     current_time = round(time.time() - start_time, 1)
+    #     if current_time != prev_time:  # ------------------------------------------------(10Hz) Update serial data
+    #         data = f.readline().split(",")
+    #         location = [float(data[1]), float(data[2]), 0]
+    #         car_location = location
+    #         # print("system_time: " + str(current_time))
+    #         relative_route = get_relative_route(global_route)
+    #         if current_time - float(data[0]) > 0:  # data_time is lagging, therefore advance read line f'n
+    #             while current_time - float(data[0]) > 0:
+    #                 # print("Advancing line until current time is found...")
+    #                 data = f.readline().split(",")
+    #                 # print("new_data_time: " + data[0])
+    #
+    #         direction = float(data[3])
+    #         # print("location: " + str(location))
+    #         # print("direction: " + str(direction))
+    #         car_location = location
+    #         # print("-----")
+    #     prev_time = current_time * 1
+    # except (ValueError, IndexError):
+    #     f.close()
+    #     # print("-----\nReached end of Recording...\n-----")
+    # ---------------------------------------------------------------------------------------------
 
     # hard-coding car's location
-    # car_location = [-79.92581, 43.25696, 0]
+    # car_location = [-79.92581+dx, 43.25696+dy, 0]
+    car_location = [-79.92589 + dx, 43.25756 + dy, 0]
+    relative_route = get_relative_route(global_route)  # !! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world.
+
+    t2 = time.clock()
+    # Compute rotation matrix ----------------------------------------------------------------------
+    x_theta = cv2.getTrackbarPos('rx', 'image')/1000.0-3.14
+    y_theta = cv2.getTrackbarPos('ry', 'image')/1000.0
+    z_theta = cv2.getTrackbarPos('rz', 'image')/1000.0-3.14
 
     x_rotation_matrix = np.matrix(
         [[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
@@ -308,30 +364,52 @@ while True:
     z_rotation_matrix = np.matrix(
         [[np.cos(z_theta), -np.sin(z_theta), 0], [np.sin(z_theta), np.cos(z_theta), 0], [0, 0, 1]])
 
-    rotation_matrix = z_rotation_matrix * y_rotation_matrix * x_rotation_matrix
+    rotation_matrix = z_rotation_matrix * y_rotation_matrix * x_rotation_matrix  # we can hard-code the resultant matrix after we're done testing. It will be more efficient at runtime.
 
+    translation_vector = np.array([[-cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
+
+    t3 = time.clock()
+    # -----------------------------------------------------------------------------------------------
+
+    # Clipping + Perspective Transform--------------------------------------------------------------
     transformed_points = []
+    # clip_rotation = -cv2.getTrackbarPos('ry', 'image') / 1000.0 - 1.5*np.pi  # matches camera rotation
 
-    for i in range(0, len(relative_route)):
-        transformed_points.append(convert_world_to_cam(relative_route[i]))
+    clip_rotation = -cv2.getTrackbarPos('car_angle', 'image') / 1000.0  # uses another slider. Using this just for debugging
 
-    black_background = np.zeros((2448, 3264, 3), np.uint8)
+    # clip_point = np.array([43.25696, -79.92581, 0])  # global location of the camera in the route
+    clip_point = np.array([cv2.getTrackbarPos('pt_x', 'image')-2000, cv2.getTrackbarPos('pt_y', 'image')-2000, 0])
 
-    pts_world = np.array(transformed_points, np.int32)
+    relative_route = clip_array(relative_route, clip_point, clip_rotation)
+    # print(relative_route)
 
-    cv2.polylines(black_background, [pts_world], True, (255, 255, 0), 4)
+    for i in relative_route:
+        transformed_points.append(convert_world_to_cam(i))
 
+    car_location_perspective_transform = convert_world_to_cam(clip_point)
+    # ------------------------------------------------------------------------------------------------
+
+    t4 = time.clock()
+
+    black_background = np.zeros((2448, 3264, 3), np.uint8)  # clears frame with black background. This will be replaced each frame by the following video frame. Black background is just for testing until we get video footage.
+    cv2.polylines(black_background, [np.array(transformed_points, np.int32)], True, (255, 255, 0), 4)
+    cv2.circle(black_background, (int(car_location_perspective_transform[0]), int(car_location_perspective_transform[1])), 35, (0, 0, 255), -1)
     cv2.imshow("image", black_background)
 
-    x_theta = cv2.getTrackbarPos('rx', 'image')/1000.0-3.14
-    y_theta = cv2.getTrackbarPos('ry', 'image')/1000.0-2*3.14
-    # y_theta = y_theta + np.pi*0.01
-    z_theta = cv2.getTrackbarPos('rz', 'image')/1000.0-3.14
+    t5 = time.clock()
 
-    # delete the '-300' offset on line below when you get the chance... also get rid of that negative tx.
-    translation_vector = np.array([[-cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')+11], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
+    end = time.clock()
+    # total_runtime += end - t1
+    # average_time = total_runtime/iteration
+    # print("Average Runtime: " + str(round(average_time*1000,1)) + " milliseconds ; (" + str(iteration) + ") iterations.")
+    # print("Total: " + str(round((end-t1)*1000,1)))
+    # print("t1: " + str(round((t2-t1)*1000,1)))
+    # print("t2: " + str(round((t3 - t2)*1000,1)))
+    # print("t3: " + str(round((t4 - t3)*1000,1)))
+    # print("t4: " + str(round((t5 - t4)*1000,1)))
+    # print("t5: " + str(round((end - t5)*1000,1)))
 
-    if cv2.waitKey(60) & 0xFF == ord('q'):
+    if cv2.waitKey(30) & 0xFF == ord('q'):
         break
 
 cv2.destroyAllWindows()
