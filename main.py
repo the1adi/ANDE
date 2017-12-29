@@ -2,7 +2,7 @@
 # - Subdivide the array and then look at the altitudes for all of the points
 #   Delete points in the array which don't have a large difference in altitude, simplifying the array
 #   Will be efficient at runtime and give us altitudes accurately
-
+#
 # - I predict that we will encounter playback issues with regards to the frame rate
 #   WaitKey will wait a certain amount of time before advancing to the next loop of the While-loop
 #   We will experience a ms delay with running this code in addition to the predefined WaitKey delay
