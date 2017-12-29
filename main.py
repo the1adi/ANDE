@@ -1,20 +1,24 @@
+# Notes/Ideas:
+# - Subdivide the array and then look at the altitudes for all of the points
+#   Delete points in the array which don't have a large difference in altitude, simplifying the array
+#   Will be efficient at runtime and give us altitudes accurately
+
+# - I predict that we will encounter playback issues with regards to the frame rate
+#   WaitKey will wait a certain amount of time before advancing to the next loop of the While-loop
+#   We will experience a ms delay with running this code in addition to the predefined WaitKey delay
+#   This will make it difficult to playback at 30 FPS consistently and have the video played at its true speed
+#   Currently there is a ~22 ms delay from running this code, if this exceeds 33.3 ms we may run into issues playing back video at 30 FPS (1/30*1000 = 33.3 ms)
+#   I discovered that threading in Python is terrible. In most cases, adding multiple threads is SLOWER than performing everything in the same thread
+#   We should separate the program into 2 Processes: one for playing back the video, and the other for performing the math operations
+#   Optionally we can have a third process for the Image Processing portion of OpenCV
+#   We would have to research how to make these processes communicate with each other since their variables are all localized
+
 import cv2
 import numpy as np
 import time
 import requests
 import polyline
 import json
-
-api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
-
-# intrinsic parameters (iPhone 5s)
-intrinsic_parameters = [2797.43, 2797.43, 1631.5, 1223.5]  # fx, fy, cx, cy
-
-# extrinsic parameters
-translation_vector = np.array([[0], [0], [1500]], np.int32)
-
-location = [0, 0]  # Car location
-direction = 0  # Car direction
 
 
 def point_is_viewable(line_pt_1, line_pt_2, point):
@@ -90,7 +94,7 @@ def clip_array(route_array, clip_point, clip_rotation):
 
     except IndexError:
         print("Error")
-        return np.array(get_relative_route(global_route))  # if something goes wrong, just return the array which was originally provided
+        return np.array(get_relative_route(global_route, scale))  # if something goes wrong, just return the array which was originally provided
 
     return np.array(clipped_array)
 
@@ -231,16 +235,10 @@ def fetch_route_google_api(start, end, fetch_altitudes):
         else:
             route_polyline_vector.append([route_polyline[i][1], route_polyline[i][0], 0])
 
-    # print("Polyline Array:")
-    print(route_polyline_vector)
-
     return np.array(route_polyline_vector, dtype=np.float32)  # return numpy array
 
 
-def get_relative_route(array):  # returns the route relative to car's current location. Also scale to relate GPS units to mm
-    scale = 1000000
-    # scale = 110550039 #relates GPS units to millimeters
-
+def get_relative_route(array, scale):  # returns the route relative to car's current location. Also scale to relate GPS units to mm
     point = np.array(car_location, dtype=np.float32)
     relative_route_gps = (array - point)*scale  # subtract point from every element of array and adjust scale
     return relative_route_gps
@@ -259,66 +257,50 @@ def nothing(x):
     pass
 
 
+api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
+intrinsic_parameters = [2797.43, 2797.43, 1631.5, 1223.5]  # fx, fy, cx, cy
+
+origin = [43.256963, -79.925822]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
+destination = [43.259598, -79.923227]
+
+# global_route = fetch_route_google_api(origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
+global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0], [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0], [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0], [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0], [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0], [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0], [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0], [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0], [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
+
+road_width = 0.00002
+global_route = draw_road(np.array(global_route), road_width)  # global route remains unaltered for the remainder of the code.
+scale = 10000000  # relates GPS units to millimeters. 110550039 was the calculated value, it should be correct.
+
 f = open('serial_output.txt', 'r')
 start_time = time.time() - 0.1
 prev_time = 0
-
-car_location = [0, 0, 0]  # default value
-origin = [43.256963, -79.925822]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
-destination = [43.263071, -79.901068]
-# global_route = fetch_route_google_api(origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
-global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0], [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0], [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0], [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0], [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0], [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0], [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0], [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0], [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
-# global_route = draw_road(np.array(global_route), 0.00007)
-global_route = draw_road(np.array(global_route), 0.00015)
-
-relative_route = get_relative_route(global_route)
 
 cv2.namedWindow('image', cv2.WINDOW_NORMAL)
 cv2.resizeWindow('image', 1100, 768)
 
 # CAR PERSPECTIVE
-cv2.createTrackbar('rx', 'image', 7912, 6280*2, nothing)
-cv2.createTrackbar('ry', 'image', 4703, 6280*2, nothing)
+cv2.createTrackbar('rx', 'image', 1571, 6280*2, nothing)
+cv2.createTrackbar('ry', 'image', 4712, 6280*2, nothing)
 cv2.createTrackbar('rz', 'image', 6280, 6280*2, nothing)
 cv2.createTrackbar('tx', 'image', 0, 10000, nothing)
-cv2.createTrackbar('ty', 'image', 55, 10000, nothing)
-cv2.createTrackbar('tz', 'image', 143, 10000, nothing)
+cv2.createTrackbar('ty', 'image', 200, 10000, nothing)
+cv2.createTrackbar('tz', 'image', 350, 10000, nothing)
 
-# ZOOMED OUT AERIAL
-# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
-# cv2.createTrackbar('tx', 'image', 12522, 30000, nothing)
-# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
-# cv2.createTrackbar('tz', 'image', 24747, 30000, nothing)
-
-# ZOOMED IN AERIAL
-# cv2.createTrackbar('rx', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('ry', 'image', 0, 6280*2, nothing)
-# cv2.createTrackbar('rz', 'image', 3140, 6280*2, nothing)
-# cv2.createTrackbar('tx', 'image', 1454, 30000, nothing)
-# cv2.createTrackbar('ty', 'image', 0, 10000, nothing)
-# cv2.createTrackbar('tz', 'image', 2941, 30000, nothing)
-
-# CAR LOCATION SLIDERS
-cv2.createTrackbar('car_x', 'image', 0, 2000, nothing)
-cv2.createTrackbar('car_y', 'image', 0, 2000, nothing)
-
-# CLIPPING SLIDERS (For debugging)
-cv2.createTrackbar('car_angle', 'image', 0, 6283, nothing)  # used just for debugging. Delete this after
-cv2.createTrackbar('pt_x', 'image', 2000, 4000, nothing)
-cv2.createTrackbar('pt_y', 'image', 2000, 4000, nothing)
-
-# used for measuring efficiency
+# Used for measuring efficiency
 iteration = 0
 total_runtime = 0
 
+keyboard_speed = 0.0001  # WSAD keyboard directions. Movement speed
+dx = 0  # delete these after. They are used just for testing
+dy = 0  # delete these after. They are used just for testing
+
 while True:
-    dx = cv2.getTrackbarPos('car_x', 'image')/100000  # used for testing
-    dy = cv2.getTrackbarPos('car_y', 'image')/100000  # used for testing
     # used for runtime efficiency
     iteration += 1
     t1 = time.clock()
+
+    #  Delete all instances of dx and dy after you have GPS data to work with. Set them to zero Clipping Point will be at the origin. car_location will just be the desired GPS coordinates of the car.
+    car_location = [-79.92589 + dx, 43.25756 + dy, 0]
+    relative_route = get_relative_route(global_route, scale)  # !! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world.
 
     # fetch recorded data from txt file --------------------------------------------------------
     # try:
@@ -328,7 +310,7 @@ while True:
     #         location = [float(data[1]), float(data[2]), 0]
     #         car_location = location
     #         # print("system_time: " + str(current_time))
-    #         relative_route = get_relative_route(global_route)
+    #         relative_route = get_relative_route(global_route, scale)
     #         if current_time - float(data[0]) > 0:  # data_time is lagging, therefore advance read line f'n
     #             while current_time - float(data[0]) > 0:
     #                 # print("Advancing line until current time is found...")
@@ -344,18 +326,11 @@ while True:
     # except (ValueError, IndexError):
     #     f.close()
     #     # print("-----\nReached end of Recording...\n-----")
-    # ---------------------------------------------------------------------------------------------
 
-    # hard-coding car's location
-    # car_location = [-79.92581+dx, 43.25696+dy, 0]
-    car_location = [-79.92589 + dx, 43.25756 + dy, 0]
-    relative_route = get_relative_route(global_route)  # !! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world.
-
-    t2 = time.clock()
     # Compute rotation matrix ----------------------------------------------------------------------
     x_theta = cv2.getTrackbarPos('rx', 'image')/1000.0-3.14
-    y_theta = cv2.getTrackbarPos('ry', 'image')/1000.0
     z_theta = cv2.getTrackbarPos('rz', 'image')/1000.0-3.14
+    y_theta = cv2.getTrackbarPos('ry', 'image') / 1000.0  # y_theta will simply be replaced with the compass data
 
     x_rotation_matrix = np.matrix(
         [[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
@@ -365,51 +340,46 @@ while True:
         [[np.cos(z_theta), -np.sin(z_theta), 0], [np.sin(z_theta), np.cos(z_theta), 0], [0, 0, 1]])
 
     rotation_matrix = z_rotation_matrix * y_rotation_matrix * x_rotation_matrix  # we can hard-code the resultant matrix after we're done testing. It will be more efficient at runtime.
+    translation_vector = np.array([[-cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')], [cv2.getTrackbarPos('tz', 'image')]], np.int32)  # this should be replaced with the car's GPS data
 
-    translation_vector = np.array([[-cv2.getTrackbarPos('tx', 'image')], [cv2.getTrackbarPos('ty', 'image')], [cv2.getTrackbarPos('tz', 'image')]], np.int32)
-
-    t3 = time.clock()
-    # -----------------------------------------------------------------------------------------------
-
-    # Clipping + Perspective Transform--------------------------------------------------------------
+    # Clipping & Perspective Transform -------------------------------------------------------------
     transformed_points = []
-    # clip_rotation = -cv2.getTrackbarPos('ry', 'image') / 1000.0 - 1.5*np.pi  # matches camera rotation
-
-    clip_rotation = -cv2.getTrackbarPos('car_angle', 'image') / 1000.0  # uses another slider. Using this just for debugging
-
-    # clip_point = np.array([43.25696, -79.92581, 0])  # global location of the camera in the route
-    clip_point = np.array([cv2.getTrackbarPos('pt_x', 'image')-2000, cv2.getTrackbarPos('pt_y', 'image')-2000, 0])
-
+    clip_rotation = -cv2.getTrackbarPos('ry', 'image') / 1000.0 - np.pi/2
+    clip_point = np.array([dx, dy, 0])
     relative_route = clip_array(relative_route, clip_point, clip_rotation)
-    # print(relative_route)
 
     for i in relative_route:
         transformed_points.append(convert_world_to_cam(i))
 
-    car_location_perspective_transform = convert_world_to_cam(clip_point)
-    # ------------------------------------------------------------------------------------------------
+    car_location_perspective_transform = convert_world_to_cam(clip_point)  # Used to draw the car's location as a red dot
 
-    t4 = time.clock()
-
+    # OpenCV Drawing Functions -----------------------------------------------------------------------
     black_background = np.zeros((2448, 3264, 3), np.uint8)  # clears frame with black background. This will be replaced each frame by the following video frame. Black background is just for testing until we get video footage.
-    cv2.polylines(black_background, [np.array(transformed_points, np.int32)], True, (255, 255, 0), 4)
+    cv2.polylines(black_background, [np.array(transformed_points, np.int32)], True, (255, 255, 255), 5)
     cv2.circle(black_background, (int(car_location_perspective_transform[0]), int(car_location_perspective_transform[1])), 35, (0, 0, 255), -1)
     cv2.imshow("image", black_background)
 
-    t5 = time.clock()
-
+    # Measuring Runtime Efficiency -------------------------------------------------------------------
     end = time.clock()
-    # total_runtime += end - t1
-    # average_time = total_runtime/iteration
+    total_runtime += end - t1
+    average_time = total_runtime/iteration
     # print("Average Runtime: " + str(round(average_time*1000,1)) + " milliseconds ; (" + str(iteration) + ") iterations.")
-    # print("Total: " + str(round((end-t1)*1000,1)))
-    # print("t1: " + str(round((t2-t1)*1000,1)))
-    # print("t2: " + str(round((t3 - t2)*1000,1)))
-    # print("t3: " + str(round((t4 - t3)*1000,1)))
-    # print("t4: " + str(round((t5 - t4)*1000,1)))
-    # print("t5: " + str(round((end - t5)*1000,1)))
 
-    if cv2.waitKey(30) & 0xFF == ord('q'):
+    key = cv2.waitKey(30)
+
+    if key == ord('w'):
+        dx += keyboard_speed
+
+    if key == ord('s'):
+        dx -= keyboard_speed
+
+    if key == ord('a'):
+        dy += keyboard_speed
+
+    if key == ord('d'):
+        dy -= keyboard_speed
+
+    if key == ord('q'):
         break
 
 cv2.destroyAllWindows()
