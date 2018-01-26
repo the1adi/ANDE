@@ -7,6 +7,17 @@ import json
 import time
 
 
+def rolling_average(new_data, average_array, roll_len):
+    if len(average_array) >= roll_len:
+        del average_array[0]
+        average_array.append(new_data)
+    else:
+        for i in range(0, roll_len):
+            average_array.append(new_data)
+    # print(average_array)
+    return np.average(average_array), average_array
+
+
 def point_is_viewable(line_pt_1, line_pt_2, point):
     # Determinant of form: (Bx - Ax) * (Y - Ay) - (By - Ay) * (X - Ax)
     # The 'line' is defined by two points. This is the clipping line.
@@ -253,43 +264,68 @@ def nothing(x):
 
 
 #  route_data_process
-def get_route_data(conn, live, intrinsic_parameters):
-    api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
-    origin = [43.256963, -79.925822]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
-    destination = [43.259598, -79.923227]
+def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
 
-    # global_route = fetch_route_google_api(api_key, origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
-    global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0],
-                    [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0],
-                    [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0],
-                    [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0],
-                    [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0],
-                    [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0],
-                    [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0],
-                    [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0],
-                    [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
+    # global_route = [[-79.92581, 43.25696, 0], [-79.92589, 43.25756, 0], [-79.92562, 43.25757, 0],
+    #                 [-79.9238, 43.25762, 0], [-79.92288, 43.25767, 0], [-79.92281, 43.25764, 0],
+    #                 [-79.92177, 43.25766, 0], [-79.92098, 43.25769, 0], [-79.91845, 43.25773, 0],
+    #                 [-79.91574, 43.2578, 0], [-79.91307, 43.25787, 0], [-79.91211, 43.25791, 0],
+    #                 [-79.91161, 43.25792, 0], [-79.91153, 43.25794, 0], [-79.9114, 43.25801, 0],
+    #                 [-79.91111, 43.25804, 0], [-79.9104, 43.25812, 0], [-79.90693, 43.2585, 0], [-79.9055, 43.25869, 0],
+    #                 [-79.90441, 43.25884, 0], [-79.90327, 43.25901, 0], [-79.90239, 43.25913, 0],
+    #                 [-79.90237, 43.2593, 0], [-79.90225, 43.25965, 0], [-79.90189, 43.26039, 0],
+    #                 [-79.90074, 43.26301, 0], [-79.90106, 43.26309, 0]]
 
     # make a function which parses the Google API response, then organizes the event data in this format:
     # also maybe make a separate function for the event array which doesn't draw the ones that aren't on screen
 
-    event_coordinates = [[-79.92589, 43.25756, 0],[-79.92281, 43.25764, 0], [-79.91574, 43.2578, 0], [-79.90106, 43.26309, 0]]
+    event_coordinates = [[-79.92589, 43.25756, 0], [-79.92281, 43.25764, 0], [-79.91574, 43.2578, 0], [-79.90106, 43.26309, 0]]
     event_commands = ["Event 1", "Event 2", "Event 3", "Event 4"]
 
     road_width = 0.000015
     global_route = draw_road(np.array(global_route), road_width)  # global route remains unaltered for the remainder of the code.
     scale = 10000000  # relates GPS units to millimeters. 110550039 was the calculated value, it should be correct.
+    x_theta = 0
+    y_theta_offset = 0  # default value
+    z_theta = 0
+    x_translation = 0
+    y_translation = 100
+    z_translation = 1
+    clip_rotation_val = 0
 
     clock = 0
 
-    f = open('serial_output_2.txt', 'r')  # open data file
+    f = open('R2.txt', 'r')  # open data file
+    averaging_array = []
 
     while True:
+        # offset += 1
+        # print(offset)
         start = time.time()  # only used for tracking frame rate
 
-        # get data from file
+        if not conn2.empty():
+            aa = conn2.get()
+            try:
+                print("updating data...")
+                x_theta = np.deg2rad(aa[0])
+                y_theta_offset = np.deg2rad(aa[1])
+                z_theta = np.deg2rad(aa[2])
+                x_translation = aa[3]
+                y_translation = aa[4]
+                z_translation = aa[5]
+                clip_rotation_val = np.deg2rad(aa[6])
+                scale = aa[7]*10000
+            except IndexError:
+                pass
+
         data = f.readline().split(",")  # reads next line of data
+
         car_location = [float(data[1]), float(data[2]), 0]
-        car_direction = float(data[3])
+        # car_location = [-79.959068, 43.266967, 0]
+        # car_location = [-79.92581, 43.25696, 0]
+        # car_location = [-79.92589, 43.25756, 0]
+        car_direction = 0
+        # car_direction, averaging_array = rolling_average(float(data[3]), averaging_array, 20)
 
         # generate relative route based on car position and direction
         relative_route = get_relative_route(car_location, global_route, scale)  # !!! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world. Although, now that this is a separate process, efficiency isn't too big of a deal. Re-program this if you have time.
@@ -297,22 +333,21 @@ def get_route_data(conn, live, intrinsic_parameters):
 
         # Compute rotation matrix ----------------------------------------------------------------------
         # If we end up using altitudes, modify the micro-controller code to get car pitch from accelerometer, then modify x_theta and/or z_theta accordingly
-        x_theta = 1571 / 1000.0 - 3.14
-        z_theta = 6280 / 1000.0 - 3.14
-        y_theta = np.deg2rad(car_direction)  # add an offset to this, I think that the world currently thinks South is East (?). ie. Add Pi/2 to the recorded data
+        # x_theta = 1571 / 1000.0 - 3.14
+        # z_theta = 6280 / 1000.0 - 3.14
+        # y_theta = np.deg2rad(car_direction)  # add an offset to this, I think that the world currently thinks South is East (?). ie. Add Pi/2 to the recorded data
 
-        x_rotation_matrix = np.matrix(
-            [[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
-        y_rotation_matrix = np.matrix(
-            [[np.cos(y_theta), 0, np.sin(y_theta)], [0, 1, 0], [-np.sin(y_theta), 0, np.cos(y_theta)]])
-        z_rotation_matrix = np.matrix(
-            [[np.cos(z_theta), -np.sin(z_theta), 0], [np.sin(z_theta), np.cos(z_theta), 0], [0, 0, 1]])
+        y_theta = car_direction + y_theta_offset
+
+        x_rotation_matrix = np.matrix([[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
+        y_rotation_matrix = np.matrix([[np.cos(y_theta), 0, np.sin(y_theta)], [0, 1, 0], [-np.sin(y_theta), 0, np.cos(y_theta)]])
+        z_rotation_matrix = np.matrix([[np.cos(z_theta), -np.sin(z_theta), 0], [np.sin(z_theta), np.cos(z_theta), 0], [0, 0, 1]])
 
         rotation_matrix = z_rotation_matrix * y_rotation_matrix * x_rotation_matrix  # we can hard-code the resultant matrix after we're done testing. It will be more efficient at runtime.
-        translation_vector = np.array([[0], [100], [1]], np.int32)  # affects the height of the camera, and the 'zoom' in a sense. This will have to be calibrated to match the height of the camera in the car
+        translation_vector = np.array([[x_translation], [y_translation], [z_translation]], np.int32)  # affects the height of the camera, and the 'zoom' in a sense. This will have to be calibrated to match the height of the camera in the car
 
         # Clipping & Perspective Transform -------------------------------------------------------------
-        clip_rotation = -4712 / 1000.0 - np.pi / 2
+        clip_rotation = -y_theta + clip_rotation_val
         clip_point = np.array([0, 0, 0])  # will be origin as long as the world is moved around the car, if we change this, the clip_point will have to match the car's position
         relative_route = clip_array(relative_route, clip_point, clip_rotation, global_route, scale, True)
 
@@ -327,7 +362,7 @@ def get_route_data(conn, live, intrinsic_parameters):
 
         car_location_pt = convert_world_to_cam(clip_point, rotation_matrix, translation_vector, intrinsic_parameters)  # Used to draw the car's location as a red dot. Note, this is just at the origin and this line can be deleted. It was just used for testing.
 
-        conn.put([clock, car_location_pt, route_pt, events_pt, events_pt_is_visible])  # send data to queue for the main process to grab. For live scenario, we don't need a timestamp.
+        conn1.put([clock, car_location_pt, route_pt, events_pt, events_pt_is_visible])  # send data to queue for the main process to grab. For live scenario, we don't need a timestamp.
 
         clock += 0.1  # replace this with actual timestamp data from text file
 
@@ -345,78 +380,97 @@ def get_route_data(conn, live, intrinsic_parameters):
 
 #  main_process
 if __name__ == '__main__':
+    cv2.namedWindow('Main')
+
+    cv2.createTrackbar('x_rotation (roll)', 'Main', 270, 360, nothing)  # old value: 270
+    cv2.createTrackbar('y_rotation (yaw)', 'Main', 0, 360, nothing)
+    cv2.createTrackbar('z_rotation (pitch)', 'Main', 180, 360, nothing)  # old value: 180
+
+    cv2.createTrackbar('x_translation', 'Main', 0, 500, nothing)
+    cv2.createTrackbar('y_translation', 'Main', 1500, 5000, nothing)
+    cv2.createTrackbar('z_translation', 'Main', 1, 2000, nothing)
+    cv2.createTrackbar('clip_rotation', 'Main', 270, 360, nothing)
+    cv2.createTrackbar('scale1', 'Main', 10000, 50000, nothing)
 
     live = False  # indicates whether program is operating with live or recorded data
 
     if not live:
-        filename = "sample_video480.mov"
+        filename = "R2.mov"
         video_dimensions = [640, 360]  # width/height
-        camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
+        # camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
+        camera_parameters = [1229, 1153, video_dimensions[0] / 2, video_dimensions[1] / 2]  # fx, fy, cx, cy (480p iPhone 6 video)
         cap = cv2.VideoCapture(filename)
     else:
         video_dimensions = [640, 360]  # width/height
-        camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
+        # camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
+        camera_parameters = [1229, 1153, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 6 video)
         cap = cv2.VideoCapture(0)  # live video still needs to be properly implemented
 
-    window_scale = 1
-    cv2.namedWindow('Main', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('Main', int(video_dimensions[0]*window_scale), int(video_dimensions[1]*window_scale))
+    api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
+    origin = [43.266967, -79.959068]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
+    destination = [43.259140, -79.941978]
+
+    global_route = fetch_route_google_api(api_key, origin, destination, False)  # Numpy array of polyline data. Boolean arg for altitudes
 
     # create new process for route data
-    q = Queue()
-    p = Process(target=get_route_data, args=(q, live, camera_parameters,))
+    q1 = Queue()  # send data from child to parent
+    q2 = Queue()  # send data from parent to child
+    p = Process(target=get_route_data, args=(q1, live, camera_parameters, global_route, q2,))
     p.start()
 
     start = time.time()
 
     ready = False
     while not ready:  # waits for the other process to begin sending data before beginning the main process loop
-        if not q.empty():
-            route_data = q.get()
-            time_stamp = route_data[0]  # we might have to make minor modifications to this for live video
-            car_location_image = route_data[1]  # data is received in image coordinates
-            route_points_image = route_data[2]  # data is received in image coordinates
-            event_list = route_data[3]
-            event_list_visibility = route_data[4]
-            ready = True
+        if not q1.empty():
+            route_data = q1.get()
+            try:
+                time_stamp = route_data[0]  # we might have to make minor modifications to this for live video
+                car_location_image = route_data[1]  # data is received in image coordinates
+                route_points_image = route_data[2]  # data is received in image coordinates
+                event_list = route_data[3]
+                event_list_visibility = route_data[4]
+                ready = True
+            except IndexError:
+                pass
 
-    while cap.isOpened():  # main process loop
-        ret, frame = cap.read()
+    counter = 0
+    while True:  # main process loop
+
+        ret, img = cap.read()
+
         end = time.time()
-        # print("Main Process, Loop: ~" + str(round(1/(end - start), 1)) + " FPS")  # instantaneous calculated frequency, actual frame-rate is probably closer to 30 FPS
         start = time.time()
 
         # get data from route data process
-        if not live and round(time_stamp, 1) < round(cap.get(cv2.CAP_PROP_POS_MSEC)/1000, 1) and not q.empty():  # ensures that timestamp in recorded data matches current frame in video
-            route_data = q.get()
+        if not live and round(time_stamp, 1) < round(cap.get(cv2.CAP_PROP_POS_MSEC)/1000, 1) and not q1.empty():  # ensures that timestamp in recorded data matches current img in video
+            route_data = q1.get()
             time_stamp = route_data[0]
             car_location_image = route_data[1]
             route_points_image = route_data[2]
             event_list = route_data[3]
             event_list_visibility = route_data[4]
+
+            q2.put([cv2.getTrackbarPos('x_rotation (roll)', 'Main'), cv2.getTrackbarPos('y_rotation (yaw)', 'Main'), cv2.getTrackbarPos('z_rotation (pitch)', 'Main'), cv2.getTrackbarPos('x_translation', 'Main'), cv2.getTrackbarPos('y_translation', 'Main'), cv2.getTrackbarPos('z_translation', 'Main'), cv2.getTrackbarPos('clip_rotation', 'Main'), cv2.getTrackbarPos('scale1', 'Main')])
+
         elif live:
-            while not q.empty():  # gets most recently added element in the queue. The queue won't likely fill up anyway since queue is checked at ~30 Hz and data is added to the queue at 10 Hz. This is just to make the program handle lags well.
-                route_data = q.get()  # if data is live, then take new data at the queue immediately as it arrives
+            while not q1.empty():  # gets most recently added element in the queue. The queue won't likely fill up anyway since queue is checked at ~30 Hz and data is added to the queue at 10 Hz. This is just to make the program handle lags well.
+                route_data = q1.get()  # if data is live, then take new data at the queue immediately as it arrives
                 # time_stamp = route_data[0]  # timestamps don't matter for live serial data... this is used just for testing
                 car_location_image = route_data[1]
                 route_points_image = route_data[2]
                 event_list = route_data[3]
                 event_list_visibility = route_data[4]
 
-        # print("Video Timestamp:" + str(round(cap.get(cv2.CAP_PROP_POS_MSEC)/1000, 1)))
-        # print("Data Timestamp:" + str(round(time_stamp, 1)))
-        # print("--")
-
-        cv2.polylines(frame, [np.array(route_points_image, np.int32)], True, (255, 255, 255), 1)
-        cv2.circle(frame, (int(car_location_image[0]), int(car_location_image[1])), 35, (0, 0, 255), -1)
+        cv2.polylines(img, [np.array(route_points_image, np.int32)], True, (255, 255, 255), 1)
+        cv2.circle(img, (int(car_location_image[0]), int(car_location_image[1])), 5, (0, 0, 255), -1)
 
         for i in range(0, len(event_list)-1):
             if event_list_visibility[i]:
-                cv2.circle(frame, (int(event_list[i][0]), int(event_list[i][1])), 5, (0, 255, 255), -1)
+                cv2.circle(img, (int(event_list[i][0]), int(event_list[i][1])), 5, (0, 255, 255), -1)
 
-        cv2.imshow('Main', frame)
+        cv2.imshow('Main', img)
+        if cv2.waitKey(30) == ord('q'):
+            break
 
-        cv_key = cv2.waitKey(30) & 0xFF == ord('q')
-
-    cap.release()
     cv2.destroyAllWindows()
