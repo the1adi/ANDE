@@ -2,6 +2,7 @@ import time
 import serial
 import main
 
+
 def record_data():
     sample_period = 0.1
     prev_time = 0
