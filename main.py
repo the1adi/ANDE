@@ -7,6 +7,111 @@ import json
 import time
 
 
+def intersection(l1, l2):
+    d = l1[0] * l2[1] - l1[1] * l2[0]
+    dx = l1[2] * l2[1] - l1[1] * l2[2]
+    dy = l1[0] * l2[2] - l1[2] * l2[0]
+    x = dx / d
+    y = dy / d
+    return x, y
+
+
+def distance_squared(pt_1, pt_2):  # used for relative distances. There is no point to taking the square root, it will just increase computation time
+    return np.square(pt_2[0]-pt_1[0]) + np.square(pt_2[1]-pt_1[1])
+
+
+def point_is_on_line(pt, pt_1, pt_2, threshold):  # pt_1 and pt_2 define the line
+    if distance_squared(pt_1, pt) + distance_squared(pt, pt_2) - distance_squared(pt_1, pt_2) < threshold:  # check if point is between other two points. Uses a threshold due to floats.
+        return True
+    else:
+        return False
+
+
+def get_closest_point(pt_1, pt_2, pt_3):
+    # standard form coefficients (Ax + By = C)
+    a1 = pt_2[1] - pt_1[1]
+    b1 = pt_1[0] - pt_2[0]
+    c1 = a1 * pt_1[0] + b1 * pt_1[1]
+
+    a2 = b1
+    b2 = -a1
+    c2 = a2 * pt_3[0] + b2 * pt_3[1]
+
+    intersection_pt = intersection([a1, b1, c1], [a2, b2, c2])
+
+    # if distance_squared(pt_1, intersection_pt) + distance_squared(intersection_pt, pt_2) - distance_squared(pt_1, pt_2) < 0.0000001:  # check if point is between other two points. Uses a threshold due to floats.
+    #     valid = True
+    # else:
+    #     valid = False
+
+    if point_is_on_line(intersection_pt, pt_1, pt_2, 0.0000001):
+        valid = True
+    else:
+        valid = False
+
+    return intersection_pt, valid
+
+
+def positive_angle(angle):
+    # accepts degrees
+    if angle < 0:
+        return angle + 360
+    else:
+        return angle
+
+
+def snap(pt, route, leg, rng):
+    snapped_point, current_leg = ([0, 0], 0)
+
+    for i in range(-rng, rng+1):
+        try:
+            if leg + i >= 0:  # stops the program from checking negative indices
+                current_snapped_point, valid = get_closest_point(route[leg + i], route[leg + i + 1], pt)
+                if valid and distance_squared(current_snapped_point, pt) < distance_squared(snapped_point, pt):
+                    snapped_point = current_snapped_point
+                    current_leg = leg + i
+        except IndexError:
+            pass
+
+        for i in range(-rng, rng+1):
+            try:
+                if leg + i >= 0:
+                    if distance_squared(snapped_point, pt) > distance_squared(route[leg + i], pt):
+                        snapped_point = route[leg + i]
+                        current_leg = leg + i
+            except IndexError:
+                pass
+
+    # compute compass direction
+    offset = 0
+    direction_vector = route[current_leg + 1] - route[current_leg]
+    direction = np.rad2deg(np.arctan(direction_vector[0]/direction_vector[1])) + offset
+
+    return snapped_point, current_leg, direction
+
+
+def subdivide(route, scale):
+    new_route = []
+
+    for i in range(0, len(route)-1):
+        new_route.append(route[i])  # always append first point in leg
+        finished = False
+        magnitude = np.sqrt(np.square(route[i+1][0] - route[i][0])+np.square(route[i+1][1] - route[i][1]))
+        unit_vector = [(route[i+1][0] - route[i][0])/magnitude, (route[i+1][1] - route[i][1])/magnitude]
+        # print(i)
+        n = 1
+        while not finished:
+            # print(n)
+            new_pt = [route[i][0] + unit_vector[0]*n*scale, route[i][1] + unit_vector[1]*n*scale]
+            if point_is_on_line(new_pt, route[i], route[i + 1], 0.0000001):
+                new_route.append(new_pt)
+            else:
+                finished = True
+            n += 1
+
+    return new_route
+
+
 def rolling_average(new_data, average_array, roll_len):
     if len(average_array) >= roll_len:
         del average_array[0]
@@ -282,7 +387,20 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
     event_coordinates = [[-79.92589, 43.25756, 0], [-79.92281, 43.25764, 0], [-79.91574, 43.2578, 0], [-79.90106, 43.26309, 0]]
     event_commands = ["Event 1", "Event 2", "Event 3", "Event 4"]
 
-    road_width = 0.000015
+    global_route_preserved = global_route  # used for snapping
+    leg = 0  # used for snapping
+    compass_dampening = 0.6
+    car_position_dampening = 0.6
+    car_direction = 0  # initialize
+
+    f = open('R2.txt', 'r')  # open data file
+    data = f.readline().split(",")  # reads next line of data
+
+    car_location_snapped, leg, direction_snapped = snap([float(data[1]), float(data[2])], global_route_preserved, leg, 2)  # snaps just lat/long for now. Maybe implement altitude later
+    car_location = [car_location_snapped[0], car_location_snapped[1], 0]
+
+    road_width = 0.00003
+    # road_width = 0.000000001
     global_route = draw_road(np.array(global_route), road_width)  # global route remains unaltered for the remainder of the code.
     scale = 10000000  # relates GPS units to millimeters. 110550039 was the calculated value, it should be correct.
     x_theta = 0
@@ -295,9 +413,6 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
 
     clock = 0
 
-    f = open('R2.txt', 'r')  # open data file
-    averaging_array = []
-
     while True:
         # offset += 1
         # print(offset)
@@ -306,7 +421,6 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
         if not conn2.empty():
             aa = conn2.get()
             try:
-                print("updating data...")
                 x_theta = np.deg2rad(aa[0])
                 y_theta_offset = np.deg2rad(aa[1])
                 z_theta = np.deg2rad(aa[2])
@@ -320,12 +434,13 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
 
         data = f.readline().split(",")  # reads next line of data
 
-        car_location = [float(data[1]), float(data[2]), 0]
-        # car_location = [-79.959068, 43.266967, 0]
-        # car_location = [-79.92581, 43.25696, 0]
-        # car_location = [-79.92589, 43.25756, 0]
-        car_direction = 0
-        # car_direction, averaging_array = rolling_average(float(data[3]), averaging_array, 20)
+        car_location_snapped, leg, direction_snapped = snap([float(data[1]), float(data[2])], global_route_preserved, leg, 2)  # snaps just lat/long for now. Maybe implement altitude later
+        car_location = [car_location_snapped[0], car_location_snapped[1], 0]
+
+        # print(direction_snapped)
+
+        car_direction += (direction_snapped - car_direction)*compass_dampening
+        print(car_direction)
 
         # generate relative route based on car position and direction
         relative_route = get_relative_route(car_location, global_route, scale)  # !!! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world. Although, now that this is a separate process, efficiency isn't too big of a deal. Re-program this if you have time.
@@ -337,7 +452,7 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
         # z_theta = 6280 / 1000.0 - 3.14
         # y_theta = np.deg2rad(car_direction)  # add an offset to this, I think that the world currently thinks South is East (?). ie. Add Pi/2 to the recorded data
 
-        y_theta = car_direction + y_theta_offset
+        y_theta = np.deg2rad(car_direction)  # + y_theta_offset
 
         x_rotation_matrix = np.matrix([[1, 0, 0], [0, np.cos(x_theta), -np.sin(x_theta)], [0, np.sin(x_theta), np.cos(x_theta)]])
         y_rotation_matrix = np.matrix([[np.cos(y_theta), 0, np.sin(y_theta)], [0, 1, 0], [-np.sin(y_theta), 0, np.cos(y_theta)]])
@@ -381,16 +496,17 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
 #  main_process
 if __name__ == '__main__':
     cv2.namedWindow('Main')
+    cv2.namedWindow('TrackBar')
 
-    cv2.createTrackbar('x_rotation (roll)', 'Main', 270, 360, nothing)  # old value: 270
-    cv2.createTrackbar('y_rotation (yaw)', 'Main', 0, 360, nothing)
-    cv2.createTrackbar('z_rotation (pitch)', 'Main', 180, 360, nothing)  # old value: 180
+    cv2.createTrackbar('x_rotation (roll)', 'TrackBar', 270, 360, nothing)  # old value: 270
+    cv2.createTrackbar('y_rotation (yaw)', 'TrackBar', 0, 360, nothing)
+    cv2.createTrackbar('z_rotation (pitch)', 'TrackBar', 180, 360, nothing)  # old value: 180
 
-    cv2.createTrackbar('x_translation', 'Main', 0, 500, nothing)
-    cv2.createTrackbar('y_translation', 'Main', 1500, 5000, nothing)
-    cv2.createTrackbar('z_translation', 'Main', 1, 2000, nothing)
-    cv2.createTrackbar('clip_rotation', 'Main', 270, 360, nothing)
-    cv2.createTrackbar('scale1', 'Main', 10000, 50000, nothing)
+    cv2.createTrackbar('x_translation', 'TrackBar', 0, 500, nothing)
+    cv2.createTrackbar('y_translation', 'TrackBar', 1000, 20000, nothing)
+    cv2.createTrackbar('z_translation', 'TrackBar', 1, 2000, nothing)
+    cv2.createTrackbar('clip_rotation', 'TrackBar', 270, 360, nothing)
+    cv2.createTrackbar('scale1', 'TrackBar', 3700, 50000, nothing)
 
     live = False  # indicates whether program is operating with live or recorded data
 
@@ -451,7 +567,7 @@ if __name__ == '__main__':
             event_list = route_data[3]
             event_list_visibility = route_data[4]
 
-            q2.put([cv2.getTrackbarPos('x_rotation (roll)', 'Main'), cv2.getTrackbarPos('y_rotation (yaw)', 'Main'), cv2.getTrackbarPos('z_rotation (pitch)', 'Main'), cv2.getTrackbarPos('x_translation', 'Main'), cv2.getTrackbarPos('y_translation', 'Main'), cv2.getTrackbarPos('z_translation', 'Main'), cv2.getTrackbarPos('clip_rotation', 'Main'), cv2.getTrackbarPos('scale1', 'Main')])
+            q2.put([cv2.getTrackbarPos('x_rotation (roll)', 'TrackBar'), cv2.getTrackbarPos('y_rotation (yaw)', 'TrackBar'), cv2.getTrackbarPos('z_rotation (pitch)', 'TrackBar'), cv2.getTrackbarPos('x_translation', 'TrackBar'), cv2.getTrackbarPos('y_translation', 'TrackBar'), cv2.getTrackbarPos('z_translation', 'TrackBar'), cv2.getTrackbarPos('clip_rotation', 'TrackBar'), cv2.getTrackbarPos('scale1', 'TrackBar')])
 
         elif live:
             while not q1.empty():  # gets most recently added element in the queue. The queue won't likely fill up anyway since queue is checked at ~30 Hz and data is added to the queue at 10 Hz. This is just to make the program handle lags well.
@@ -463,6 +579,7 @@ if __name__ == '__main__':
                 event_list_visibility = route_data[4]
 
         cv2.polylines(img, [np.array(route_points_image, np.int32)], True, (255, 255, 255), 1)
+        # cv2.fillPoly(img, [np.array(route_points_image, np.int32)], (255, 255, 255))
         cv2.circle(img, (int(car_location_image[0]), int(car_location_image[1])), 5, (0, 0, 255), -1)
 
         for i in range(0, len(event_list)-1):
