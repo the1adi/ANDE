@@ -350,7 +350,7 @@ def fetch_route_google_api(key, start, end, fetch_altitudes):
 
 
 def get_relative_route(car_location, array, scale):  # returns the route relative to car's current location. Also scale to relate GPS units to mm
-    point = np.array(car_location, dtype=np.float32)
+    point = np.array(car_location, dtype=np.float64)
     relative_route_gps = (array - point)*scale  # subtract point from every element of array and adjust scale
     return relative_route_gps
 
@@ -522,6 +522,7 @@ if __name__ == '__main__':
         camera_parameters = [1229, 1153, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 6 video)
         cap = cv2.VideoCapture(0)  # live video still needs to be properly implemented
 
+    road_alpha = 0.3
     api_key = 'AIzaSyDHOw34O0k8qDJ-td0jJhmi7GskJVffY64'
     origin = [43.266967, -79.959068]  # replace this with car's gps coordinates. Make an initialization function which samples the car's current location, then queries Google for the global route
     destination = [43.259140, -79.941978]
@@ -579,14 +580,16 @@ if __name__ == '__main__':
                 event_list_visibility = route_data[4]
 
         cv2.polylines(img, [np.array(route_points_image, np.int32)], True, (255, 255, 255), 1)
-        # cv2.fillPoly(img, [np.array(route_points_image, np.int32)], (255, 255, 255))
-        cv2.circle(img, (int(car_location_image[0]), int(car_location_image[1])), 5, (0, 0, 255), -1)
+        overlay = img.copy()
+        output = img.copy()
+        cv2.fillPoly(overlay, [np.array(route_points_image, np.int32)], (255, 230, 0))
+        cv2.addWeighted(overlay, road_alpha, output, 1 - road_alpha, 0, output)
 
         for i in range(0, len(event_list)-1):
             if event_list_visibility[i]:
-                cv2.circle(img, (int(event_list[i][0]), int(event_list[i][1])), 5, (0, 255, 255), -1)
+                cv2.circle(output, (int(event_list[i][0]), int(event_list[i][1])), 5, (0, 255, 255), -1)
 
-        cv2.imshow('Main', img)
+        cv2.imshow('Main', output)
         if cv2.waitKey(30) == ord('q'):
             break
 
