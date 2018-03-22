@@ -440,7 +440,7 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, conn2):
         # print(direction_snapped)
 
         car_direction += (direction_snapped - car_direction)*compass_dampening
-        print(car_direction)
+       #print(car_direction)
 
         # generate relative route based on car position and direction
         relative_route = get_relative_route(car_location, global_route, scale)  # !!! this could be more efficient. Right now we are moving the world camera coordinates around the camera. We should move the camera around the world. Although, now that this is a separate process, efficiency isn't too big of a deal. Re-program this if you have time.
