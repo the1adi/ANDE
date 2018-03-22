@@ -6,7 +6,6 @@ import polyline
 import json
 import time
 import pyclipper
-#ADI MAKING RANDOM COMMENTS TO TEST VCS
 
 
 class NavigationEvent:
