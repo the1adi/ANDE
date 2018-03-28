@@ -453,7 +453,7 @@ def get_route_data(conn1, live, intrinsic_parameters, global_route, route_instru
     car_direction = 0
     # ---------------------------------------------------------
 
-    f = open('R2.txt', 'r')  # open data file
+    f = open('R4.txt', 'r')  # open data file
     data = f.readline().split(",")  # reads first line of data
 
     car_location_snapped, leg, direction_snapped = snap([float(data[1]), float(data[2])], global_route_preserved, leg, 2)  # snaps just lat/long for now. Maybe implement altitude later
@@ -584,15 +584,15 @@ if __name__ == '__main__':
     live = False  # indicates whether program is operating with live or recorded data
 
     if not live:
-        filename = "R2.mov"
+        filename = "R4.mov"
         video_dimensions = [640, 360]  # width/height
         # camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
-        camera_parameters = [1229, 1153, video_dimensions[0] / 2, video_dimensions[1] / 2]  # fx, fy, cx, cy (480p iPhone 6 video)
+        camera_parameters = [2870, 2852, video_dimensions[0] / 2, video_dimensions[1] / 2]  # fx, fy, cx, cy (480p iPhone 6 video)
         cap = cv2.VideoCapture(filename)
     else:
         video_dimensions = [640, 360]  # width/height
         # camera_parameters = [2797.43, 2797.43, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 5s video)
-        camera_parameters = [1229, 1153, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 6 video)
+        camera_parameters = [2870, 2852, video_dimensions[0]/2, video_dimensions[1]/2]  # fx, fy, cx, cy (480p iPhone 6 video)
         cap = cv2.VideoCapture(0)  # live video still needs to be properly implemented
 
     road_alpha = 0.4
